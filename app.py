@@ -82,9 +82,22 @@ if uploaded_file:
 
         X = pd.get_dummies(X, drop_first=True)
 
+     # Handle stratify safely
+try:
+    if y.nunique() > 1:
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.3, random_state=42, stratify=y
         )
+    else:
+        st.warning("⚠️ Target column has only one unique value. Stratify disabled.")
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.3, random_state=42
+        )
+except Exception as e:
+    st.warning(f"Stratified split failed due to: {e}. Using random split instead.")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42
+    )
 
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
