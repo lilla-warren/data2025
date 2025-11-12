@@ -1,114 +1,91 @@
-# app.py - HCT Datathon 2025: Clinical Intelligence Platform
+# 🏥 HCT DATATHON 2025 - CLINICAL INTELLIGENCE PLATFORM
+# Author: Your Name
+# Institution: Higher Colleges of Technology
+
 import streamlit as st
 import pandas as pd
 import numpy as np
-import shap
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
-
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score,
-    f1_score, roc_auc_score, confusion_matrix, roc_curve
+    accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
 )
+import warnings
+warnings.filterwarnings("ignore")
 
-# --------------------------
-# APP CONFIG
-# --------------------------
-st.set_page_config(page_title="🏥 Clinical Intelligence Platform", layout="wide")
+# ------------------------- PAGE CONFIG -------------------------
+st.set_page_config(page_title="🏥 HCT Datathon 2025", page_icon="💉", layout="wide")
 
-st.title("🏥 HCT Datathon 2025 - Clinical Intelligence Platform")
-st.markdown("""
-### Transforming Health Data into Knowledge  
-**Goal:** Apply machine learning & ethical AI to derive insights, predictions, and recommendations.
----
-""")
+st.markdown("<h1 style='text-align:center; color:#1f77b4;'>🏥 HCT Datathon 2025 - Clinical Intelligence Platform</h1>", unsafe_allow_html=True)
+st.markdown("---")
 
-# --------------------------
-# FILE UPLOAD
-# --------------------------
-st.sidebar.header("📂 Upload Your Dataset")
-uploaded_file = st.sidebar.file_uploader("Upload a CSV file", type=["csv"])
+# ------------------------- FILE UPLOAD -------------------------
+st.sidebar.header("📁 Data Upload")
+uploaded_file = st.sidebar.file_uploader("Upload your dataset (CSV)", type=["csv"])
 
-if uploaded_file:
+if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    st.subheader("📊 Dataset Overview")
-    st.dataframe(df.head())
-    st.write(f"Shape: {df.shape}")
-    st.write("Summary Statistics:")
-    st.dataframe(df.describe())
+    st.success(f"✅ Dataset loaded successfully! Shape: {df.shape}")
 
-    # --------------------------
-    # DESCRIPTIVE ANALYTICS
-    # --------------------------
-    st.markdown("## 1️⃣ Descriptive Analytics")
-    st.write("Visualizing feature distributions and class balance.")
-    numeric_cols = df.select_dtypes(include=np.number).columns
+    # ------------------------- DATA OVERVIEW -------------------------
+    st.subheader("📊 Data Overview")
+    st.write(df.head())
+    st.write("**Data Info:**")
+    st.write(df.describe())
 
-    if len(numeric_cols) > 0:
-        col1, col2 = st.columns(2)
-        with col1:
-            fig, ax = plt.subplots()
-            sns.histplot(df[numeric_cols[0]], kde=True, ax=ax)
-            st.pyplot(fig)
-        with col2:
-            fig, ax = plt.subplots()
-            sns.boxplot(df[numeric_cols[0]], ax=ax)
-            st.pyplot(fig)
+    # Handle missing values
+    if df.isnull().sum().sum() > 0:
+        st.warning("⚠️ Missing values detected! Filling with median/mode.")
+        for col in df.columns:
+            if df[col].dtype in ['float64', 'int64']:
+                df[col].fillna(df[col].median(), inplace=True)
+            else:
+                df[col].fillna(df[col].mode()[0], inplace=True)
 
-    # --------------------------
-    # CORRELATION (DIAGNOSTIC)
-    # --------------------------
-    st.markdown("## 2️⃣ Diagnostic Analytics")
-    st.write("Exploring feature relationships via correlation heatmap.")
-    corr = df.corr(numeric_only=True)
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
-    st.pyplot(fig)
+    # ------------------------- TARGET SELECTION -------------------------
+    target = st.sidebar.selectbox("🎯 Select Target Variable:", df.columns)
 
-    # --------------------------
-    # TARGET SELECTION
-    # --------------------------
-    st.markdown("## 3️⃣ Predictive Modeling")
-target = st.selectbox("Select the target column (label):", df.columns)
+    if target:
+        X = df.drop(columns=[target])
+        y = df[target]
 
-if target:
-    X = df.drop(columns=[target])
-    y = df[target]
+        # Encode categorical features
+        X = pd.get_dummies(X, drop_first=True)
 
-    X = pd.get_dummies(X, drop_first=True)
+        # Encode target if needed
+        if y.dtype == 'object':
+            le = LabelEncoder()
+            y = le.fit_transform(y)
 
-    # Safe stratified split
-    try:
+        # Split safely
         if y.nunique() > 1:
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.3, random_state=42, stratify=y
-            )
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.3, random_state=42, stratify=y
+                )
+            except Exception:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.3, random_state=42
+                )
         else:
-            st.warning("⚠️ Target column has only one unique value. Stratify disabled.")
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.3, random_state=42
-            )
-    except Exception as e:
-        st.warning(f"Stratified split failed due to: {e}. Using random split instead.")
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.3, random_state=42
-        )
+            st.warning("⚠️ Target has only one class — cannot train models.")
+            st.stop()
 
-    # Scaling
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+        # Scale numeric features
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
 
-        # --------------------------
-        # MODEL TRAINING
-        # --------------------------
+        # ------------------------- MODEL TRAINING -------------------------
+        st.markdown("## 🤖 Predictive Modeling")
+
         models = {
-            "Logistic Regression": LogisticRegression(max_iter=1000),
+            "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
             "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42)
         }
 
@@ -116,77 +93,55 @@ if target:
         for name, model in models.items():
             model.fit(X_train_scaled, y_train)
             y_pred = model.predict(X_test_scaled)
-            y_prob = model.predict_proba(X_test_scaled)[:, 1] if hasattr(model, "predict_proba") else y_pred
+            y_prob = model.predict_proba(X_test_scaled)[:, 1] if hasattr(model, "predict_proba") else None
 
             metrics = {
                 "Model": name,
                 "Accuracy": accuracy_score(y_test, y_pred),
-                "Precision": precision_score(y_test, y_pred, average="weighted"),
-                "Recall": recall_score(y_test, y_pred, average="weighted"),
-                "F1": f1_score(y_test, y_pred, average="weighted"),
-                "ROC-AUC": roc_auc_score(y_test, y_prob) if len(np.unique(y_test)) == 2 else np.nan
+                "Precision": precision_score(y_test, y_pred, zero_division=0),
+                "Recall": recall_score(y_test, y_pred, zero_division=0),
+                "F1-Score": f1_score(y_test, y_pred, zero_division=0),
+                "ROC-AUC": roc_auc_score(y_test, y_prob) if y_prob is not None else np.nan
             }
             results.append(metrics)
 
-        results_df = pd.DataFrame(results)
-        st.write("### Model Performance Summary")
-        st.dataframe(results_df.style.highlight_max(color='lightgreen', axis=0))
+        results_df = pd.DataFrame(results).round(3)
+        st.dataframe(results_df, use_container_width=True)
 
-        # --------------------------
-        # CONFUSION MATRIX & ROC
-        # --------------------------
-        best_model_name = results_df.sort_values("Accuracy", ascending=False).iloc[0]["Model"]
-        best_model = models[best_model_name]
+        # ------------------------- VISUAL INSIGHTS -------------------------
+        st.markdown("## 📈 Model Performance Insights")
 
-        st.markdown(f"### 🎯 Best Model: **{best_model_name}**")
-        y_pred_best = best_model.predict(X_test_scaled)
+        col1, col2 = st.columns(2)
+        with col1:
+            fig = px.bar(results_df, x="Model", y="Accuracy", title="Model Accuracy", color="Model")
+            st.plotly_chart(fig, use_container_width=True)
 
-        cm = confusion_matrix(y_test, y_pred_best)
-        fig, ax = plt.subplots()
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
-        plt.title("Confusion Matrix")
-        st.pyplot(fig)
+        with col2:
+            fig = px.bar(results_df, x="Model", y="F1-Score", title="F1-Score Comparison", color="Model")
+            st.plotly_chart(fig, use_container_width=True)
 
-        if len(np.unique(y_test)) == 2:
-            fpr, tpr, _ = roc_curve(y_test, best_model.predict_proba(X_test_scaled)[:, 1])
+        # Confusion matrix
+        st.markdown("### 🧩 Confusion Matrix")
+        for name, model in models.items():
+            y_pred = model.predict(X_test_scaled)
+            cm = confusion_matrix(y_test, y_pred)
             fig, ax = plt.subplots()
-            ax.plot(fpr, tpr, label="ROC Curve")
-            ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
-            ax.set_xlabel("False Positive Rate")
-            ax.set_ylabel("True Positive Rate")
+            sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
+            ax.set_title(f"Confusion Matrix - {name}")
             st.pyplot(fig)
 
-        # --------------------------
-        # EXPLAINABILITY (SHAP)
-        # --------------------------
-        st.markdown("## 4️⃣ Explainability & Transparency")
-        try:
-            explainer = shap.Explainer(best_model, X_train_scaled)
-            shap_values = explainer(X_test_scaled)
-            st.write("### SHAP Feature Importance")
-            shap.summary_plot(shap_values, X_test, show=False)
-            st.pyplot(bbox_inches='tight')
-        except Exception as e:
-            st.warning(f"SHAP could not run: {e}")
+        # ------------------------- RECOMMENDATIONS -------------------------
+        st.markdown("## 💡 AI-Driven Insights & Recommendations")
 
-        # --------------------------
-        # INSIGHTS & RECOMMENDATIONS
-        # --------------------------
-        st.markdown("## 5️⃣ Insights & Prescriptive Recommendations")
+        best_model = results_df.sort_values(by="F1-Score", ascending=False).iloc[0]
+        st.success(f"🏆 **Best Model:** {best_model['Model']} (F1 = {best_model['F1-Score']})")
 
-        top_features = pd.Series(best_model.feature_importances_, index=X.columns).sort_values(ascending=False) if hasattr(best_model, "feature_importances_") else pd.Series([], dtype=float)
-        if not top_features.empty:
-            st.write("### 🔍 Top Contributing Features")
-            st.bar_chart(top_features.head(5))
-
-            st.write("### 💡 Recommendations")
-            st.markdown(f"""
-            - Focus on top drivers like **{top_features.index[0]}** for early risk prediction.  
-            - Use **{best_model_name}** for production due to its superior accuracy.  
-            - Consider data balancing or domain expert input if model bias is detected.  
-            - Continuous retraining can enhance fairness and adaptiveness.  
-            """)
-        else:
-            st.info("No feature importances available for this model type.")
+        st.markdown("""
+        **Recommendations:**
+        - 🔍 Validate the model using cross-validation for consistency.
+        - 🧠 Incorporate more clinical and behavioral data to improve accuracy.
+        - ⚖️ Ensure explainability and fairness in AI-based healthcare models.
+        - 💉 Deploy the model responsibly with medical expert supervision.
+        """)
 else:
-    st.info("Please upload a dataset to begin analysis.")
+    st.info("👈 Upload your dataset in the sidebar to begin.")
