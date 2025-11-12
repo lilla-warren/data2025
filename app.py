@@ -74,9 +74,9 @@ if uploaded_file:
     # TARGET SELECTION
     # --------------------------
     st.markdown("## 3️⃣ Predictive Modeling")
-    target = st.selectbox("Select the target column (label):", df.columns)
+target = st.selectbox("Select the target column (label):", df.columns)
 
-    if target:
+if target:
     X = df.drop(columns=[target])
     y = df[target]
 
@@ -103,7 +103,6 @@ if uploaded_file:
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
-
 
         # --------------------------
         # MODEL TRAINING
