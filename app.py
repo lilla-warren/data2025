@@ -1,198 +1,178 @@
+# app.py - HCT Datathon 2025: Clinical Intelligence Platform
 import streamlit as st
 import pandas as pd
 import numpy as np
 import shap
 import matplotlib.pyplot as plt
+import seaborn as sns
 import plotly.express as px
-import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split, StratifiedKFold, GridSearchCV, cross_val_score
+
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix, roc_curve
-import joblib
-import io
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, confusion_matrix, roc_curve
+)
 
-# -------------------------------------
-# 🎯 PAGE SETUP
-# -------------------------------------
-st.set_page_config(page_title="🏥 Healthcare Analytics Platform", layout="wide")
+# --------------------------
+# APP CONFIG
+# --------------------------
+st.set_page_config(page_title="🏥 Clinical Intelligence Platform", layout="wide")
 
-st.title("🏥 Advanced Healthcare Analytics Platform")
-st.write("A unified platform for descriptive, diagnostic, predictive, and prescriptive healthcare analytics — fully deployable via GitHub + Streamlit.")
+st.title("🏥 HCT Datathon 2025 - Clinical Intelligence Platform")
+st.markdown("""
+### Transforming Health Data into Knowledge  
+**Goal:** Apply machine learning & ethical AI to derive insights, predictions, and recommendations.
+---
+""")
 
-# -------------------------------------
-# 📂 1. DATA UPLOAD
-# -------------------------------------
-uploaded_file = st.file_uploader("📤 Upload your CSV dataset", type=["csv"])
+# --------------------------
+# FILE UPLOAD
+# --------------------------
+st.sidebar.header("📂 Upload Your Dataset")
+uploaded_file = st.sidebar.file_uploader("Upload a CSV file", type=["csv"])
 
-if uploaded_file is not None:
+if uploaded_file:
     df = pd.read_csv(uploaded_file)
-    st.success("✅ Dataset loaded successfully!")
-    st.write("**Data Preview:**")
+    st.subheader("📊 Dataset Overview")
     st.dataframe(df.head())
+    st.write(f"Shape: {df.shape}")
+    st.write("Summary Statistics:")
+    st.dataframe(df.describe())
 
-    target_col = st.selectbox("🎯 Select the Target Column", df.columns)
+    # --------------------------
+    # DESCRIPTIVE ANALYTICS
+    # --------------------------
+    st.markdown("## 1️⃣ Descriptive Analytics")
+    st.write("Visualizing feature distributions and class balance.")
+    numeric_cols = df.select_dtypes(include=np.number).columns
 
-    # -------------------------------------
-    # 🧹 2. DATA PREPROCESSING
-    # -------------------------------------
-    X = df.drop(columns=[target_col])
-    y = df[target_col]
+    if len(numeric_cols) > 0:
+        col1, col2 = st.columns(2)
+        with col1:
+            fig, ax = plt.subplots()
+            sns.histplot(df[numeric_cols[0]], kde=True, ax=ax)
+            st.pyplot(fig)
+        with col2:
+            fig, ax = plt.subplots()
+            sns.boxplot(df[numeric_cols[0]], ax=ax)
+            st.pyplot(fig)
 
-    X = pd.get_dummies(X, drop_first=True)
+    # --------------------------
+    # CORRELATION (DIAGNOSTIC)
+    # --------------------------
+    st.markdown("## 2️⃣ Diagnostic Analytics")
+    st.write("Exploring feature relationships via correlation heatmap.")
+    corr = df.corr(numeric_only=True)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
+    st.pyplot(fig)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y
-    )
+    # --------------------------
+    # TARGET SELECTION
+    # --------------------------
+    st.markdown("## 3️⃣ Predictive Modeling")
+    target = st.selectbox("Select the target column (label):", df.columns)
 
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    if target:
+        X = df.drop(columns=[target])
+        y = df[target]
 
-    min_class_count = y_train.value_counts().min()
-    cv_folds = min(5, min_class_count)
-    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+        X = pd.get_dummies(X, drop_first=True)
 
-    # -------------------------------------
-    # 🤖 3. MODELING
-    # -------------------------------------
-    models_config = {
-        "Logistic Regression": {
-            "model": LogisticRegression(max_iter=1000),
-            "params": {"C": [0.1, 1, 10]}
-        },
-        "Random Forest": {
-            "model": RandomForestClassifier(random_state=42),
-            "params": {"n_estimators": [100, 200], "max_depth": [None, 5, 10]}
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.3, random_state=42, stratify=y
+        )
+
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+
+        # --------------------------
+        # MODEL TRAINING
+        # --------------------------
+        models = {
+            "Logistic Regression": LogisticRegression(max_iter=1000),
+            "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42)
         }
-    }
 
-    selected_models = st.multiselect("Select Models to Train", list(models_config.keys()), default=list(models_config.keys()))
-    use_grid = st.checkbox("Use Grid Search for Hyperparameter Tuning", True)
+        results = []
+        for name, model in models.items():
+            model.fit(X_train_scaled, y_train)
+            y_pred = model.predict(X_test_scaled)
+            y_prob = model.predict_proba(X_test_scaled)[:, 1] if hasattr(model, "predict_proba") else y_pred
 
-    results = []
-    trained_models = {}
+            metrics = {
+                "Model": name,
+                "Accuracy": accuracy_score(y_test, y_pred),
+                "Precision": precision_score(y_test, y_pred, average="weighted"),
+                "Recall": recall_score(y_test, y_pred, average="weighted"),
+                "F1": f1_score(y_test, y_pred, average="weighted"),
+                "ROC-AUC": roc_auc_score(y_test, y_prob) if len(np.unique(y_test)) == 2 else np.nan
+            }
+            results.append(metrics)
 
-    st.subheader("⚙️ Model Training & Evaluation")
-    progress = st.progress(0)
-    step = 1 / len(selected_models)
+        results_df = pd.DataFrame(results)
+        st.write("### Model Performance Summary")
+        st.dataframe(results_df.style.highlight_max(color='lightgreen', axis=0))
 
-    for i, model_name in enumerate(selected_models):
-        model_cfg = models_config[model_name]
-        model = model_cfg["model"]
+        # --------------------------
+        # CONFUSION MATRIX & ROC
+        # --------------------------
+        best_model_name = results_df.sort_values("Accuracy", ascending=False).iloc[0]["Model"]
+        best_model = models[best_model_name]
 
-        if use_grid:
-            gs = GridSearchCV(model, model_cfg["params"], cv=cv, scoring="f1_macro")
-            gs.fit(X_train_scaled, y_train)
-            best_model = gs.best_estimator_
-            st.write(f"✅ {model_name}: Best Params →", gs.best_params_)
-        else:
-            best_model = model.fit(X_train_scaled, y_train)
+        st.markdown(f"### 🎯 Best Model: **{best_model_name}**")
+        y_pred_best = best_model.predict(X_test_scaled)
 
-        trained_models[model_name] = best_model
-
-        # Predictions & Metrics
-        y_pred = best_model.predict(X_test_scaled)
-        y_prob = best_model.predict_proba(X_test_scaled)[:, 1] if hasattr(best_model, "predict_proba") else None
-
-        cv_score = cross_val_score(best_model, X_train_scaled, y_train, cv=cv, scoring="f1_macro")
-
-        metrics = {
-            "Model": model_name,
-            "Accuracy": accuracy_score(y_test, y_pred),
-            "Precision": precision_score(y_test, y_pred, average="weighted"),
-            "Recall": recall_score(y_test, y_pred, average="weighted"),
-            "F1-Score": f1_score(y_test, y_pred, average="weighted"),
-            "ROC-AUC": roc_auc_score(y_test, y_prob) if y_prob is not None else np.nan,
-            "CV F1 Mean": cv_score.mean()
-        }
-        results.append(metrics)
-        progress.progress((i + 1) * step)
-
-    results_df = pd.DataFrame(results)
-    st.dataframe(results_df, use_container_width=True)
-
-    # -------------------------------------
-    # 📈 4. ROC CURVES
-    # -------------------------------------
-    st.subheader("📈 ROC Curves")
-    fig = go.Figure()
-    for name, model in trained_models.items():
-        if hasattr(model, "predict_proba"):
-            y_prob = model.predict_proba(X_test_scaled)[:, 1]
-            fpr, tpr, _ = roc_curve(y_test, y_prob)
-            auc = roc_auc_score(y_test, y_prob)
-            fig.add_trace(go.Scatter(x=fpr, y=tpr, mode="lines", name=f"{name} (AUC={auc:.2f})"))
-    fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", line=dict(dash="dash"), name="Random"))
-    fig.update_layout(title="ROC Curve", xaxis_title="False Positive Rate", yaxis_title="True Positive Rate")
-    st.plotly_chart(fig, use_container_width=True)
-
-    # -------------------------------------
-    # 🧮 5. CONFUSION MATRIX
-    # -------------------------------------
-    st.subheader("🧮 Confusion Matrix")
-    selected_cm_model = st.selectbox("Select model for Confusion Matrix", list(trained_models.keys()))
-    cm_model = trained_models[selected_cm_model]
-    cm = confusion_matrix(y_test, cm_model.predict(X_test_scaled))
-    fig_cm = px.imshow(cm, text_auto=True, color_continuous_scale="Blues", labels=dict(x="Predicted", y="Actual"))
-    st.plotly_chart(fig_cm, use_container_width=True)
-
-    # -------------------------------------
-    # 🔍 6. SHAP EXPLAINABILITY
-    # -------------------------------------
-    st.subheader("🔍 SHAP Explainability")
-    shap_model = st.selectbox("Select model for SHAP analysis", list(trained_models.keys()))
-    model = trained_models[shap_model]
-
-    try:
-        X_sample = pd.DataFrame(X_train_scaled, columns=X.columns).sample(80, random_state=42)
-        explainer = shap.Explainer(model, X_sample)
-        shap_values = explainer(X_sample)
+        cm = confusion_matrix(y_test, y_pred_best)
         fig, ax = plt.subplots()
-        shap.summary_plot(shap_values, X_sample, show=False)
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
+        plt.title("Confusion Matrix")
         st.pyplot(fig)
-    except Exception as e:
-        st.warning(f"SHAP explainability unavailable: {e}")
 
-    # -------------------------------------
-    # 💡 7. PRESCRIPTIVE INSIGHTS
-    # -------------------------------------
-    st.subheader("💡 Prescriptive Insights & Recommendations")
+        if len(np.unique(y_test)) == 2:
+            fpr, tpr, _ = roc_curve(y_test, best_model.predict_proba(X_test_scaled)[:, 1])
+            fig, ax = plt.subplots()
+            ax.plot(fpr, tpr, label="ROC Curve")
+            ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
+            ax.set_xlabel("False Positive Rate")
+            ax.set_ylabel("True Positive Rate")
+            st.pyplot(fig)
 
-    best_model_name = results_df.loc[results_df["F1-Score"].idxmax(), "Model"]
-    best_model = trained_models[best_model_name]
+        # --------------------------
+        # EXPLAINABILITY (SHAP)
+        # --------------------------
+        st.markdown("## 4️⃣ Explainability & Transparency")
+        try:
+            explainer = shap.Explainer(best_model, X_train_scaled)
+            shap_values = explainer(X_test_scaled)
+            st.write("### SHAP Feature Importance")
+            shap.summary_plot(shap_values, X_test, show=False)
+            st.pyplot(bbox_inches='tight')
+        except Exception as e:
+            st.warning(f"SHAP could not run: {e}")
 
-    if hasattr(best_model, "feature_importances_"):
-        feat_importance = pd.DataFrame({
-            "Feature": X.columns,
-            "Importance": best_model.feature_importances_
-        }).sort_values("Importance", ascending=False)
-        st.write(f"**Top Contributing Features ({best_model_name})**")
-        st.bar_chart(feat_importance.set_index("Feature").head(10))
+        # --------------------------
+        # INSIGHTS & RECOMMENDATIONS
+        # --------------------------
+        st.markdown("## 5️⃣ Insights & Prescriptive Recommendations")
 
-        st.markdown("### 📋 Recommendations:")
-        for feat in feat_importance.head(5)["Feature"]:
-            if "blood" in feat.lower():
-                st.markdown(f"- `{feat}`: Encourage regular blood pressure monitoring.")
-            elif "glucose" in feat.lower():
-                st.markdown(f"- `{feat}`: Recommend lifestyle changes for blood sugar control.")
-            elif "age" in feat.lower():
-                st.markdown(f"- `{feat}`: Target preventive health programs for older populations.")
-            elif "bmi" in feat.lower():
-                st.markdown(f"- `{feat}`: Promote physical activity and nutrition awareness.")
-            else:
-                st.markdown(f"- `{feat}`: Continuous monitoring recommended for early risk detection.")
+        top_features = pd.Series(best_model.feature_importances_, index=X.columns).sort_values(ascending=False) if hasattr(best_model, "feature_importances_") else pd.Series([], dtype=float)
+        if not top_features.empty:
+            st.write("### 🔍 Top Contributing Features")
+            st.bar_chart(top_features.head(5))
 
-    # -------------------------------------
-    # 📦 8. DOWNLOAD RESULTS
-    # -------------------------------------
-    st.subheader("📦 Download Results & Model")
-
-    buffer = io.BytesIO()
-    results_df.to_csv(buffer, index=False)
-    st.download_button("⬇️ Download Metrics CSV", data=buffer.getvalue(), file_name="model_metrics.csv")
-
-    model_buffer = io.BytesIO()
-    joblib.dump(best_model, model_buffer)
-    st.download_button("⬇️ Download Best Model", data=model_buffer.getvalue(), file_name=f"best_{best_model_name}.joblib")
+            st.write("### 💡 Recommendations")
+            st.markdown(f"""
+            - Focus on top drivers like **{top_features.index[0]}** for early risk prediction.  
+            - Use **{best_model_name}** for production due to its superior accuracy.  
+            - Consider data balancing or domain expert input if model bias is detected.  
+            - Continuous retraining can enhance fairness and adaptiveness.  
+            """)
+        else:
+            st.info("No feature importances available for this model type.")
+else:
+    st.info("Please upload a dataset to begin analysis.")
